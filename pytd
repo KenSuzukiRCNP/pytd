@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+
+import sys
+import matplotlib.pyplot as plt
+
+def parse_topdrawer_file(file_path):
+    data = []
+    current_data = {'x': [], 'y': [], 'dx': [], 'dy': [], 'legend': None}
+    columns = []
+    title_x, title_y, title_top = "", "", ""
+    grid = False
+    hist = False
+    xlim = None
+    ylim = None
+    xscale = 'linear'
+    yscale = 'linear'
+
+    def process_lines(lines):
+        nonlocal columns, title_x, title_y, title_top, grid, hist, xlim, ylim, xscale, yscale, data, current_data
+        for line in lines:
+            if line.startswith("#"):
+                continue
+            if line.startswith("set order"):
+                columns = line.split()[2:]
+                current_data = {'x': [], 'y': [], 'dx': [], 'dy': [], 'legend': current_data['legend']}
+            elif line.startswith("set title"):
+                parts = line.split(maxsplit=3)
+                if parts[2] == 'x':
+                    title_x = parts[3].strip('"')
+                elif parts[2] == 'y':
+                    title_y = parts[3].strip('"')
+                elif parts[2] == 'top':
+                    title_top = parts[3].strip('"')
+            elif line.startswith("set grid"):
+                grid = line.split()[2] == "on"
+            elif line.startswith("hist"):
+                hist = True
+            elif line.startswith("set limit"):
+                parts = line.split()
+                axis = parts[2]
+                min_val = float(parts[4])
+                max_val = float(parts[6])
+                if axis == 'x':
+                    xlim = (min_val, max_val)
+                elif axis == 'y':
+                    ylim = (min_val, max_val)
+            elif line.startswith("set scale"):
+                parts = line.split()
+                axis = parts[2]
+                scale = parts[3]
+                if axis == 'x':
+                    xscale = scale
+                elif axis == 'y':
+                    yscale = scale
+            elif line.startswith("set file input"):
+                parts = line.split()
+                included_file_path = parts[3]
+                with open(included_file_path, 'r') as included_file:
+                    included_lines = included_file.readlines()
+                    process_lines(included_lines)
+            elif line.startswith("set legend"):
+                parts = line.split(maxsplit=2)
+                current_data['legend'] = parts[2].strip()
+            elif line.startswith("plot"):
+                if current_data['x'] and any(current_data['y']):
+                    data.append(current_data.copy())
+                current_data = {'x': [], 'y': [], 'dx': [], 'dy': [], 'legend': None}
+            else:
+                values = line.split()
+                if len(values) != len(columns):
+                    continue
+                y_index = 0
+                for col, val in zip(columns, values):
+                    if col == 'x':
+                        current_data['x'].append(float(val))
+                    elif col == 'y':
+                        if len(current_data['y']) <= y_index:
+                            current_data['y'].append([])
+                        current_data['y'][y_index].append(float(val))
+                        y_index += 1
+                    elif col == 'dx':
+                        current_data['dx'].append(float(val))
+                    elif col == 'dy':
+                        current_data['dy'].append(float(val))
+                    # skip 'dummy' columns
+
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+        process_lines(lines)
+
+    if current_data['x'] and any(current_data['y']):
+        data.append(current_data.copy())
+
+    return data, title_x, title_y, title_top, grid, hist, xlim, ylim, xscale, yscale
+
+def plot_data(data, title_x, title_y, title_top, grid, hist, xlim, ylim, xscale, yscale):
+    for current_data in data:
+        x = current_data['x']
+        ys = current_data['y']
+        dx = current_data['dx']
+        dy = current_data['dy']
+        legend = current_data['legend']
+        for y in ys:
+            if hist:
+                plt.hist(y, bins='auto', alpha=0.7, label=legend if legend else 'Histogram')
+            else:
+                if dx and dy:
+                    plt.errorbar(x, y, xerr=dx, yerr=dy, fmt='o', label=legend if legend else 'Data with Error Bars')
+                elif dy:
+                    plt.errorbar(x, y, yerr=dy, fmt='o', label=legend if legend else 'Data with Error Bars')
+                elif dx:
+                    plt.errorbar(x, y, xerr=dx, fmt='o', label=legend if legend else 'Data with Error Bars')
+                else:
+                    plt.plot(x, y, 'o-', label=legend if legend else 'Data')
+    plt.xlabel(title_x if title_x else 'X')
+    plt.ylabel(title_y if title_y else 'Y')
+    plt.title(title_top if title_top else 'Top-Drawer Plot')
+    if grid:
+        plt.grid(which='both', linestyle=':', linewidth='0.5', color='grey')
+    plt.tick_params(axis='both', direction='in')
+    if xlim:
+        plt.xlim(xlim)
+    if ylim:
+        plt.ylim(ylim)
+    plt.xscale(xscale)
+    plt.yscale(yscale)
+    plt.legend()
+    plt.show()
+
+def main():
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+        data, title_x, title_y, title_top, grid, hist, xlim, ylim, xscale, yscale = parse_topdrawer_file(file_path)
+        plot_data(data, title_x, title_y, title_top, grid, hist, xlim, ylim, xscale, yscale)
+    else:
+        print("Usage: script.py <topdrawer_file>")
+
+if __name__ == "__main__":
+    main()
